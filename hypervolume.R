@@ -1,6 +1,6 @@
 # Loading required packages
 install.packages("devtools")
-install.packages("gdata")
+install.packages("parallel")
 library(sf)
 library(ClimDatDownloadR)
 # Alternatively, a direct link with GitHub can be created
@@ -14,10 +14,12 @@ library(virtualspecies)
 library(ggplot2)
 library(tidyverse)
 library(terra)
+library(grid)
+library(gridExtra)
 library(ecospat)
 library(ade4)
 library(hypervolume)
-library(gdata)
+
 install.packages("hypervolume")
 devtools::install_github("bblonder/hypervolume")
 
@@ -47,7 +49,7 @@ plot(mydata)
 # bio1
 plot(mydata[[1]], col = magma(500, alpha = 1, begin = 0, end = 1, direction = 1))
 
-
+detectCores()
 
 ## Random Virtual Species
 # Suitability map generation
@@ -132,17 +134,44 @@ filtered_occ <- merge(values_occ, raster_occurences, by = c("x", "y"))
 filtered_occ <- filtered_occ[,-(8:9)]
 filtered_occ
 
-
+# Nicchia realizzata
 hv_pa = hypervolume(filtered_pa)
+
+# Occorrenze: null model
 hv_occ = hypervolume(filtered_occ)
 
 
+
+
 # Warning messages:
-#1: In hypervolume(filtered_pa) : 
-#  Consider removing some axes.
+# 1: In hypervolume(filtered_pa) : 
+# Consider removing some axes.
 # 2: In hypervolume(filtered_pa) :
-#  Log number of observations (6.96) is less than or equal to the number of dimensions (7).
+# Log number of observations (6.96) is less than or equal to the number of dimensions (7).
 # You may not have enough data to accurately estimate a hypervolume with this dimensionality.
 # Consider reducing the dimensionality of the analysis.
 
+pa_seq = hypervolume_resample("pa_seq", hv_pa, "bootstrap seq", n = 3, seq = seq(10, 100, 10), cores = 1)
+occ_seq = hypervolume_resample("occ_seq", hv_occ, "bootstrap seq", n = 3, seq = seq(10, 100, 10), cores = 1)
 
+?hypervolume_resample
+# Funnel Plots
+occ_plot = hypervolume_funnel(occ_seq) + 
+  geom_point(aes(y = upperq)) + 
+  geom_point(aes(y = lowerq)) + 
+  geom_point(aes(y = sample_mean), col = "blue") + 
+  theme_bw() + 
+  labs(title = "a)", subtitle = NULL) + 
+  ylab("Volume") + 
+  ylim(0, 0.3) + 
+  xlim(0, 100)
+pa_plot = hypervolume_funnel(pa_seq) + 
+  geom_point(aes(y = upperq)) + 
+  geom_point(aes(y = lowerq)) + 
+  geom_point(aes(y = sample_mean), col = "blue") + 
+  theme_bw() + 
+  labs(title = "b)", subtitle = NULL) + 
+  ylab("Volume") + 
+  ylim(0, 0.3) + 
+  xlim(0, 100)
+grid.arrange(pa_plot, occ_plot, nrow = 1)
