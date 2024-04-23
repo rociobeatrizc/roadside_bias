@@ -80,6 +80,7 @@ new.pres <-convertToPA(random.sp,
 plot(new.pres$pa.raster)
 
 # Occurences
+# passi da 200, tutte le occorrenze di deh
 presence.points <- sampleOccurrences(new.pres,
                                      n = 500,
                                      type = "presence only",
@@ -155,6 +156,38 @@ filtered_occ <- filtered_occ %>%
 filtered_occ <- filtered_occ[order(filtered_occ$ID), ]
 filtered_occ
 
+
+pippo <- function(x, no){
+  fx <- x %>% 
+    sample_n(size = 1) 
+  ipervolumi <- 0
+  num_occurrences <- 0
+  
+  for (i in 1:10000){
+    fx <- x %>% 
+      sample_n(size = no) %>% 
+      bind_rows(fx) %>% 
+      distinct()
+    
+    # Calcola l'ipervolume per il subset di occorrenze
+    hv <- calcola_ipervolume(fx)
+    
+    # Salva l'ipervolume e il numero di occorrenze
+    ipervolumi <- c(ipervolumi, hv)
+    num_occurrences <- c(num_occurrences, nrow(fx))
+    
+    if(nrow(fx) == nrow(x)) break   
+  }
+  bind_cols(iperv = ipervolumi, n_occ = num_occurrences)
+  
+  
+}
+
+filtered_occ %>% distinct() %>% nrow()     
+
+pluto <- pippo(filtered_occ, 200)
+
+pluto
 # Inizializza un vettore per salvare gli ipervolumi
 ipervolumi <- numeric()
 num_occurrences <- numeric()
@@ -167,7 +200,7 @@ calcola_ipervolume <- function(data) {
 end <- as.numeric(nrow(filtered_occ))
 end
 # Ciclo for per incrementare il numero di occorrenze da 10 a 100
-for (i in seq(10, 100, 10)) {
+for (i in seq(10, end, 10)) {
   # Seleziona le prime 'i' occorrenze
   subset_occ <- filtered_occ[1:i, ]
   
@@ -181,7 +214,7 @@ for (i in seq(10, 100, 10)) {
 
 # Crea il dataframe
 df <- data.frame(n_occurrences = num_occurrences, hypervolume = ipervolumi)
-
+pluto
 # Stampare il dataframe
 print(df)
 
@@ -233,7 +266,7 @@ summary(min_dist)
 coord_occ$distance <- min_dist
 
 # Based on statistics, the intervals' limits are established
-lim <- c(50000, 120000, 140000, 150000, 160000)
+lim <- c(50000, 120000, 140000, 150000, 170000)
 
 ## Sampling probability: since the probability of sampling decreases with distance from the road, we can imagine a decreasing logarithmic curve.
 # Sampling probability formula
@@ -308,9 +341,12 @@ end_roads <- as.numeric(nrow(df_points_closer))
 filtered_occ
 
 df_points_closer
+
+ipervolumi_roads <- c()
+num_occurrences_roads <- c()
 # Ciclo for per incrementare il numero di occorrenze da 10 a 100
 # Partire da 10
-for (j in seq(10, end_roads, 10)) {
+for (j in seq(10, end_roads, 15)) {
   # Seleziona le prime 'i' occorrenze
   subset_occ_roads <- df_points_closer[1:j, ]
   
@@ -329,7 +365,7 @@ df_closer <- data.frame(n_occurrences_roads = num_occurrences_roads, hypervolume
 print(df_closer)
 
 # Creazione del plot con ggplot
-plot <- ggplot(df_closer, aes(x = n_occurrences_roads, y = hypervolume_roads)) +
+plot_1 <- ggplot(df_closer, aes(x = n_occurrences_roads, y = hypervolume_roads)) +
   geom_line() +  # Linea spezzata
   geom_point() + # Punti
   labs(x = "Numero di Occorrenze", y = "Ipervolume") +  # Etichette degli assi
@@ -338,7 +374,7 @@ plot <- ggplot(df_closer, aes(x = n_occurrences_roads, y = hypervolume_roads)) +
   theme_bw()
 
 # Visualizza il plot
-print(plot)
+print(plot_1)
 
 # Creazione del plot con ggplot sovrapposto
 plot_combined <- ggplot() +
