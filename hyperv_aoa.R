@@ -213,13 +213,14 @@ calcola_ipervolume <- function(data) {
 }
 
 # Random increment
-pippo <- function(x, no){
+pippo <- function(x, no, epsilon = 0.1) {
   # Starts with a random row
   fx <- x %>% 
     sample_n(size = 1) 
   
   ipervolumi <- 0
   num_occurrences <- 0
+  interrotta_per_convergenza <- FALSE
   
   for (i in 1:1000) {
     
@@ -239,87 +240,25 @@ pippo <- function(x, no){
     ipervolumi <- c(ipervolumi, hv)
     num_occurrences <- c(num_occurrences, nrow(fx))
     
+    # Condizione di convergenza
+    if (i > 1 && abs(ipervolumi[i] - ipervolumi[i - 1]) < epsilon) {
+      interrotta_per_convergenza <- TRUE
+      break
+    }
+    
     # Condizione
     # Interrompi quando il subset ha lo stesso numero di occorrenze del set originale
-    if(nrow(fx) == nrow(x)) break   
+    if(nrow(fx) == nrow(x)) {
+      break
+    }
   }
-  bind_cols(iperv = ipervolumi, n_occ = num_occurrences)
   
+  result <- bind_cols(iperv = ipervolumi, n_occ = num_occurrences)
+  return(list(result, interrotta_per_convergenza = interrotta_per_convergenza))
 }
 
 
-
-
-#################### Hypervolume of occurrences (random sampled: null model) ###############
-# Num. simulations each species
-num_simulazioni <- 10
-
-# List with the occurrences we want to test
-valori_n_occ <- c(50, 80, 100, 150, 200)
-
-# Empty list 
-tutte_simulazioni <- list()
-
-
-# For cycle for simulations
-for (sim in 1:num_simulazioni) {
-    
-     lista_output_occ <- list()
-  
-      for (i in seq_along(valori_n_occ)) {
-        pluto <- pippo(occurrences_values, valori_n_occ[i])
-        lista_output_occ[[i]] <- pluto
-      }
-  
-    # Aggiungi la lista delle occorrenze a tutte_simulazioni
-    tutte_simulazioni[[sim]] <- lista_output_occ
-
-   }
-
-
-
-# All simulations in one df
-combined_df <- do.call(rbind, lapply(seq_along(tutte_simulazioni), function(sim) {
-   do.call(rbind, lapply(tutte_simulazioni[[sim]], function(df) {
-      df$sim <- sim
-      df
-      }))
-    }))
-
-
-# Mean predictions (LOESS): x sequence 
-x_seq <- seq(min(combined_df$n_occ), max(combined_df$n_occ), length.out = 100)
-
-# Mean predictions: LOESS method
-loess_predictions <- lapply(unique(combined_df$n_occ), function(n) {
-   preds <- sapply(tutte_simulazioni, function(lista) {
-      loess_fit <- loess(iperv ~ n_occ, data = do.call(rbind, lista))
-      predict(loess_fit, newdata = data.frame(n_occ = n))
-    })
-   
-   data.frame(n_occ = n, iperv_mean = mean(preds, na.rm = TRUE))
-
-})
-
-
-# Mean df
-predizioni_media <- do.call(rbind, loess_predictions)
-
-# Plot
-ggplot() +
-  geom_smooth(data = combined_df, aes(x = n_occ, y = iperv, group = sim), 
-              method = "loess", se = FALSE, color = "grey", size = 0.5, alpha = 0.5) +
-  geom_line(data = predizioni_media, aes(x = n_occ, y = iperv_mean), 
-            color = "sienna1", size = 1.2) +
-  labs(title = "Mean (unbiased dataset)",
-       x = "Occurrences",
-       y = "Hypervolume") +
-  theme_minimal()
-
-
-
-################# Roadside Bias #########################
-
+############################# Roadside Bias ################################
 # Create raster with distances from roads
 roads_vect <- terra::vect(osm_abruzzo_roads$geometry)
 
@@ -392,35 +331,137 @@ legend("topright", legend = c("Unbiased", "Biased"), col = c("black", "red"), pc
 
 dev.off()
 
+
+
+#################### Hypervolume of occurrences (random sampled: null model) ###############
+############################################################################################
+
+# Num. simulations each species
+num_simulazioni <- 10
+
+# Set stop point according to the number of biased occurrences: same sampling effort
+nrow(points_biased)
+nrow(occurrences_values)
+stop <-  ceiling(nrow(points_biased) + 0.2 * (nrow(points_biased)))
+
+# Random subsample of occurrences from null model 
+occurrences_values <- occurrences_values[sample(nrow(occurrences_values), stop), ]
+
+# List with the occurrences we want to test
+valori_n_occ <- c(seq(from = 20, to = stop, by = 20), stop)
+
+# Empty list 
+tutte_simulazioni <- list()
+
+convergenza_info <- vector("logical", num_simulazioni)
+
+# For cycle for simulations
+for (sim in 1:num_simulazioni) {
+  
+  lista_output_occ <- list()
+  interrotta_per_convergenza_locale <- FALSE
+  
+  for (i in seq_along(valori_n_occ)) {
+    pluto <- pippo(occurrences_values, valori_n_occ[i])
+    lista_output_occ[[i]] <- pluto[[1]]
+    
+    # Aggiorna la variabile di stato locale in base alla presenza di convergenza in questa simulazione
+    if (pluto$interrotta_per_convergenza) {
+      interrotta_per_convergenza_locale <- TRUE
+    }
+  }
+  
+  # Aggiorna la lista delle simulazioni interrotte per convergenza
+  convergenza_info[sim] <- interrotta_per_convergenza_locale
+  
+  # Aggiungi la lista delle occorrenze a tutte_simulazioni
+  tutte_simulazioni[[sim]] <- lista_output_occ
+  
+}
+
+# Output delle informazioni sulla convergenza
+print(convergenza_info)
+
+tutte_simulazioni
+# All simulations in one df
+combined_df <- do.call(rbind, lapply(seq_along(tutte_simulazioni), function(sim) {
+   do.call(rbind, lapply(tutte_simulazioni[[sim]], function(df) {
+      df$sim <- sim
+      df
+      }))
+    }))
+
+combined_df
+# Mean predictions (LOESS): x sequence 
+x_seq <- seq(min(combined_df$n_occ), max(combined_df$n_occ), length.out = 100)
+
+# Mean predictions: LOESS method
+loess_predictions <- lapply(unique(combined_df$n_occ), function(n) {
+   preds <- sapply(tutte_simulazioni, function(lista) {
+      loess_fit <- loess(iperv ~ n_occ, data = do.call(rbind, lista))
+      predict(loess_fit, newdata = data.frame(n_occ = n))
+    })
+   
+   data.frame(n_occ = n, iperv_mean = mean(preds, na.rm = TRUE))
+
+})
+
+
+# Mean df
+predizioni_media <- do.call(rbind, loess_predictions)
+
+# Plot
+ggplot() +
+  geom_smooth(data = combined_df, aes(x = n_occ, y = iperv, group = sim), 
+              method = "loess", se = FALSE, color = "grey", size = 0.5, alpha = 0.5) +
+  geom_line(data = predizioni_media, aes(x = n_occ, y = iperv_mean), 
+            color = "sienna1", size = 1.2) +
+  labs(title = "Mean (unbiased dataset)",
+       x = "Occurrences",
+       y = "Hypervolume") +
+  theme_minimal()
+
 #################### Hypervolume of biased occurrences (road driven: biased sampling) ###############
+#####################################################################################################
 
 biased_df <- points_biased %>% as.data.frame()
 biased_df <- biased_df[,-c(5:8)]
 biased_df
 
-nrow(biased_df)
-
-# Occurrences list
-valori_n_occ_biased <- c(20, 34, 57, 68)
+# Stop
+stop_biased <- nrow(biased_df)
+valori_n_occ_biased <- c(seq(from = 20, to = stop_biased, by = 20), stop_biased)
 
 # Empty list
 tutte_simulazioni_biased <- list()
+convergenza_info_biased <- vector("logical", num_simulazioni)
 
-# Simulations biased df
+# For cycle for simulations
 for (sim in 1:num_simulazioni) {
   
-     lista_output_biased <- list()
+  lista_output_biased <- list()
+  interrotta_per_convergenza_locale_biased <- FALSE
   
-     for (i in seq_along(valori_n_occ_biased)) {
-       pluto <- pippo(biased_df, valori_n_occ_biased[i])
-       lista_output_biased[[i]] <- pluto
-     }
+  for (i in seq_along(valori_n_occ_biased)) {
+    pluto <- pippo(biased_df, valori_n_occ_biased[i])
+    lista_output_biased[[i]] <- pluto[[1]]
+    
+    # Aggiorna la variabile di stato locale in base alla presenza di convergenza in questa simulazione
+    if (pluto$interrotta_per_convergenza) {
+      interrotta_per_convergenza_locale_biased <- TRUE
+    }
+  }
   
-  # Aggiungi la lista delle occorrenze biased a tutte_simulazioni_biased
+  # Aggiorna la lista delle simulazioni interrotte per convergenza
+  convergenza_info_biased[sim] <- interrotta_per_convergenza_locale_biased
+  
+  # Aggiungi la lista delle occorrenze a tutte_simulazioni
   tutte_simulazioni_biased[[sim]] <- lista_output_biased
   
-  }
+}
 
+# Output delle informazioni sulla convergenza
+print(convergenza_info_biased)
 
 # Combined df
 combined_df_biased <- do.call(rbind, lapply(seq_along(tutte_simulazioni_biased), function(sim) {
@@ -511,7 +552,7 @@ find_intersection <- function(df1, df2) {
 
 # Calc. intersection points
 intersection_points <- find_intersection(predizioni_media, predizioni_media_biased)
-
+intersection_points
 # Combined plot
 plot_combined <- ggplot() +
   geom_smooth(data = combined_df, aes(x = n_occ, y = iperv, group = sim), 
@@ -560,7 +601,6 @@ write.csv(final_results, file = "specie_1.csv", row.names = FALSE)
 ##############################################################################################
 
 #################################  Null model ################################################
-points(presence.points$sample.points, col = "black", pch = 19, cex=0.3)
 
 
 ## Model training
@@ -569,6 +609,13 @@ points(presence.points$sample.points, col = "black", pch = 19, cex=0.3)
 ## Train data: must be converted in the format required by terra::extract
 pa_points <- presence.points$sample.points[,-(3:4)] %>% as.data.frame() %>% st_as_sf(., coords = c("x","y"), crs = 4326)
 mydata_aoa <- rast(mydata_backup)
+
+pa_points
+# Subset of the original 200 points
+rownames(occurrences_values)
+pa_points <- pa_points[rownames(occurrences_values), ]
+pa_points
+
 
 # From raster, extract corresponding values 
 trainDat_null <- terra::extract(mydata_aoa, pa_points, na.rm = FALSE)
@@ -581,7 +628,7 @@ trainDat_null <- na.omit(trainDat_null)
 ## Train model for Spatially Clustered Data
 # train from CARET package: data train, data output, method (Random Forest) and Cross Validation 
 trainDat_null
-folds_null <- CreateSpacetimeFolds(trainDat_null, spacevar = "geometry", k = 10)
+folds_null <- CreateSpacetimeFolds(trainDat_null, spacevar = "geometry", k = 4)
 
 
 set.seed(15)
@@ -590,7 +637,7 @@ model_null <- train(trainDat_null[,names(mydata_aoa)],
                        method = "rf",
                        importance = TRUE,
                        tuneGrid = expand.grid(mtry = c(2:length(names(mydata_aoa)))),
-                       trControl = trainControl(method ="cv", index = folds$index))
+                       trControl = trainControl(method ="cv", index = folds_null$index))
 
 print(model_null)
 
@@ -639,8 +686,6 @@ dev.off()
 
 ##################################### Biased points ###########################################
 ###############################################################################################
-
-points(points_biased, col = "red", cex = 0.5)
 biased_sp_points <- points_biased %>% st_as_sf(., crs = 4326)
 biased_sp_points <- biased_sp_points[,-(1:8)]
 biased_sp_points
@@ -716,10 +761,70 @@ plot(AOA_biased$AOA, col = c("grey","transparent"), add = T, plg = list(x = "top
 
 dev.off()
 ############################ Comparison ###############################################
-
+## Set same scale
 par(mfrow=c(1,2))
 plot(prediction_null, col=viridis(100), main = "Prediction for AOA (null)")
 plot(AOA_null$AOA, col = c("grey","transparent"), add = T, plg = list(x = "topright", box.col = "black", bty = "o", title = "AOA"))
 
 plot(prediction_biased, col=viridis(100), main = "Prediction for AOA (Biased)")
 plot(AOA_biased$AOA, col = c("grey","transparent"), add = T, plg = list(x = "topright", box.col = "black", bty = "o", title = "AOA"))
+
+
+model_null$results
+model_biased$results
+
+## Difference? Show in the map (calc. pixel)
+plot(prediction_biased)
+plot(AOA_biased$AOA)
+
+# Uniased Masked 
+masked_raster_null <- mask(prediction_null, AOA_null$AOA, maskvalues=0, updatevalue=NA)
+
+# Biased Masked
+masked_raster_biased <- mask(prediction_biased, AOA_biased$AOA, maskvalues=0, updatevalue=NA)
+
+par(mfrow=c(1,3))
+plot(masked_raster_null)
+plot(masked_raster_biased)
+
+dev.off()
+
+# Pixels in Null Model only
+diff_null_only <- ifel(!is.na(masked_raster_null) & is.na(masked_raster_biased), 1, NA)
+
+# Pixels in Biased Model only
+diff_biased_only <- ifel(is.na(masked_raster_null) & !is.na(masked_raster_biased), -1, NA)
+
+# Merge
+diff_raster <- merge(diff_null_only, diff_biased_only)
+
+# Palette
+col_palette <- c("red", "blue")
+
+# Plot
+par(mfrow = c(1, 3), mar = c(5, 4, 4, 4) + 0.1)
+plot(masked_raster_null, main = "Null")
+plot(masked_raster_biased, main = "Biased")
+plot(diff_raster, col = col_palette, legend = FALSE, main = "Difference")
+par(mar = c(5, 4, 4, 4) + 0.1, xpd = TRUE)
+legend("topleft", legend = c("Bias - Null (Red)", "Null - Bias (Blue)"), fill = col_palette, cex = 0.8, bty = "n")
+par(mfrow = c(1, 1))
+dev.off()
+
+
+#### Spatial difference ####
+pixel_values <- values(diff_raster)
+
+# Num. red and blue pixels
+num_red_pixels <- sum(pixel_values == -1, na.rm = TRUE)
+num_blue_pixels <- sum(pixel_values == 1, na.rm = TRUE)
+
+# Area of each kind of pixel: useless
+# area_red_km2 <- num_red_pixels * 1  # Area in km^2
+# area_blue_km2 <- num_blue_pixels * 1  # Area in km^2
+
+# Print
+cat("N. red pixels:", num_red_pixels)
+cat("Area red pixels (km^2):", area_red_km2)
+cat("N. blu pixels", num_blue_pixels)
+cat("Area blu pixels (km^2):", area_blue_km2)
