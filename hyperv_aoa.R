@@ -26,8 +26,6 @@ library(osmextract)
 
 setwd("/media/r_projects/phd_rocio/hypervolume")
 
-###### Run manually ######
-
 # Upload shapefile
 aoi_abruzzo <- st_read("abruzzo.shp") %>% .$geometry 
 
@@ -44,7 +42,7 @@ ht_primary <- "primary"
 # Download roads from OSM 
 osm_abruzzo <- oe_get("Abruzzo", stringsAsFactors = FALSE, quiet = TRUE)
 osm_abruzzo_roads <- osm_abruzzo[osm_abruzzo$highway %in% ht_primary, ]
-
+dev.off()
 plot(osm_abruzzo_roads$geometry)
 
 ########## Download bioclimatic variables from CHELSA #############################
@@ -87,30 +85,46 @@ names(mydata) <- c("mean annual T", "annual precip", "amount of prec. wettest mo
 plot(mydata)
 
 # bio1: temperature
-plot(mydata[[4]], col = magma(500, alpha = 1, begin = 0, end = 1, direction = 1), legend = FALSE, bty="n", box=FALSE)
+plot(mydata[[1]], col = magma(500, alpha = 1, begin = 0, end = 1, direction = 1), legend = FALSE, bty="n", box=FALSE)
 
 # Crop and mask by region borders
 aoi_sp <- sf::as_Spatial(aoi_abruzzo)
 mydata <- mydata %>% crop(., aoi_sp) %>% mask(., aoi_sp)
 
 
+################## Plot Purposes: roads on raster ######################
+################## Better in QGIS ######################################
+raster_df <- as.data.frame(rasterToPoints(mydata_backup[[1]]), xy = TRUE)
+value_column <- names(raster_df)[3]
+ggplot() +
+  # Aggiungi il raster
+  geom_raster(data = raster_df, aes_string(x = "x", y = "y", fill = value_column)) +
+  scale_fill_viridis_c() +  # Scala di colori per il raster
+  # Aggiungi le linee delle strade
+  geom_sf(data = osm_abruzzo_roads$geometry, color = "black", size = 0.5) +
+  # Temi e titoli opzionali
+  theme_minimal() +
+  labs(title = "Roads",
+       fill = "Values") +
+  coord_sf()
 
-########### For plot purposes ####### #########
+
+########### For plot purposes ################
 # Labels 
 titles <- c("Mean Annual Temperature", "Annual Precipitation", 
             "Amount of Precipitation in Wettest Month", "Amount of Precipitation in Driest Month")
 
 # Plot all together
 par(mfrow=c(2,2), mar=c(2,2,2,0.5))
-for (i in 1:nlayers(mydata)) {
-  plot(mydata[[i]], main=titles[i], col=magma(500, alpha = 1, begin = 0, end = 1, direction = 1), legend.width=1.5, legend.shrink=0.75)
+for (i in 1:nlayers(mydata_backup)) {
+  plot(mydata_backup[[i]], main=titles[i], col=magma(500, alpha = 1, begin = 0, end = 1, direction = 1), legend.width=1.5, legend.shrink=0.75, axes=FALSE, box=FALSE)
 }
 
-
+dev.off()
 
 # Original data: will be useful later
 mydata_backup <- mydata
-
+##############################################
 
 
 ########### Random Virtual Species: run every time you want to create a virtual species, from the beginning.
@@ -128,9 +142,9 @@ random.sp <- generateRandomSp(raster.stack = mydata,
                               plot = FALSE)
 
 
-plot(random.sp$suitab.raster, col = magma(500, alpha = 1, begin = 0, end = 1, direction = 1))
+plot(random.sp$suitab.raster, col = plasma(500, alpha = 1, begin = 0, end = 1, direction = 1))
 title("Suitability Map", outer=TRUE, line=-1)
-
+dev.off()
 random.sp$suitab.raster
 
 # Response functions
@@ -146,7 +160,7 @@ new.pres <-convertToPA(random.sp,
 
 # Plot purposes 
 plot(random.sp$suitab.raster)
-plot(new.pres$pa.raster, col = c("lightgreen", "orange"))
+plot(new.pres$pa.raster, col = c("yellowgreen", "deeppink"), box = FALSE, axes = FALSE)
 title("Presence-Absence Map", outer=TRUE, line=-1)
 
 # Occurences
@@ -162,9 +176,9 @@ dev.off()
 
 # Plot
 par(mfrow=c(1,1), mar=c(2,2,2,0.5)) 
-plot(mydata[[1]], col = magma(500, alpha = 1, begin = 0, end = 1, direction = 1))
+plot(random.sp$suitab.raster, col = plasma(500, alpha = 1, begin = 0, end = 1, direction = 1), axes = FALSE, box = FALSE)
 points(presence.points$sample.points, col = "black", pch = 19, cex=0.3)
-title("Occurrences Map", outer=TRUE, line=-1)
+title("Occurrences", outer=TRUE, line=-1)
 dev.off()
 
 
@@ -202,10 +216,9 @@ values_occ
 filtered_occ <- merge(values_occ, raster_occurences, by = c("x", "y"))
 
 occurrences_values <- filtered_occ[,-c(1:2, 7:8)]
-occurrences_values
 
 
-########### Functions for Hypervolume ######
+######################## Functions for Hypervolume ####################
 # Hypervolume
 calcola_ipervolume <- function(data) {
   hv_occ <- hypervolume_gaussian(data)
@@ -213,7 +226,7 @@ calcola_ipervolume <- function(data) {
 }
 
 # Random increment
-pippo <- function(x, no, epsilon = 0.1) {
+pippo <- function(x, no, epsilon = 0.01) {
   # Starts with a random row
   fx <- x %>% 
     sample_n(size = 1) 
@@ -259,6 +272,7 @@ pippo <- function(x, no, epsilon = 0.1) {
 
 
 ############################# Roadside Bias ################################
+############################################################################
 # Create raster with distances from roads
 roads_vect <- terra::vect(osm_abruzzo_roads$geometry)
 
@@ -268,11 +282,30 @@ r <- terra::rasterize(roads_vect, raster_roads)
 d <- distance(r, unit = "km") 
 
 
-# Plot purposes 
+####################### Plot purposes: distance from roads #################
 d_rast <- d %>% raster() %>% crop(., aoi_sp) %>% mask(., aoi_sp)
-par(mfrow=c(1,1), mar=c(2,2,2,0.5)) 
-plot(d_rast, col = viridis(500, alpha = 1, begin = 0, end = 1, direction = -1))
-title("Distance from Roads (km)", outer=TRUE, line=-1)
+raster_df_dist <- as.data.frame(rasterToPoints(d_rast), xy = TRUE)
+value_column <- names(raster_df_dist)[3]
+ggplot() +
+  # Aggiungi il raster
+  geom_raster(data = raster_df_dist, aes_string(x = "x", y = "y", fill = value_column)) +
+  scale_fill_viridis_c(alpha = 1,
+                       begin = 0,
+                       end = 1) +  # Scala di colori per il raster
+  # Aggiungi le linee delle strade
+  geom_sf(data = osm_abruzzo_roads$geometry, color = "black", size = 0.5) +
+  theme_bw() +
+  # Temi e titoli opzionali
+  theme_minimal() +
+  labs(title = "Distance from Roads",
+       fill = "Distance (km)") +
+  coord_sf() +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+
+############################################################################
 
 # Extract distances
 d_raster <- d %>% raster()
@@ -293,11 +326,29 @@ sampling_prob[sampling_prob > 1] <- 1
 prob_raster <- classify(d, cbind(values(d), sampling_prob))
 
 
-# Plot purposes
+############ Plot purposes: sampling probability ##########################
 prob_r <- prob_raster %>% raster() %>% crop(., aoi_sp) %>% mask(., aoi_sp)
-par(mfrow=c(1,1), mar=c(2,2,2,0.5)) 
-plot(prob_r, col = viridis(500, alpha = 1, begin = 0, end = 1, direction = -1))
-title("Probability to be sampled", outer=TRUE, line=-1)
+raster_df_prob <- as.data.frame(rasterToPoints(prob_r), xy = TRUE)
+value_column <- names(raster_df_prob)[3]
+ggplot() +
+  # Aggiungi il raster
+  geom_raster(data = raster_df_prob, aes_string(x = "x", y = "y", fill = value_column)) +
+  scale_fill_viridis_c(alpha = 1,
+                       begin = 0,
+                       end = 1) +  # Scala di colori per il raster
+  # Aggiungi le linee delle strade
+  geom_sf(data = osm_abruzzo_roads$geometry, color = "black", size = 0.5) +
+  theme_bw() +
+  # Temi e titoli opzionali
+  theme_minimal() +
+  labs(title = "Sampling Probability",
+       fill = "Probability") +
+  coord_sf() +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+
 
 
 # Occurrences as points
@@ -316,23 +367,6 @@ print(occ_with_prob)
 #sample_frac # Points with 100% of probability to be sampled (the one in the roads and within 1 km)
 points_biased <- occ_with_prob[occ_with_prob$layer == 1, ]
 
-# If we need a subset: points_biased <- sample(points_biased, 60)
-
-
-# Plot purposes
-par(mfrow=c(1,1), mar=c(2,2,2,0.5)) 
-plot(prob_r, col = viridis(500, alpha = 1, begin = 0, end = 1, direction = -1))
-# title("Probability to be sampled", outer=TRUE, line=-1)
-points(coord_occ, cex = 0.5)
-points(points_biased, col = "red", cex = 0.5)
-# Aggiungi la legenda
-legend("topright", legend = c("Unbiased", "Biased"), col = c("black", "red"), pch = 19, cex = 0.8,
-       xpd = TRUE, y.intersp = 0.8)
-
-dev.off()
-
-
-
 #################### Hypervolume of occurrences (random sampled: null model) ###############
 ############################################################################################
 
@@ -346,6 +380,30 @@ stop <-  ceiling(nrow(points_biased) + 0.2 * (nrow(points_biased)))
 
 # Random subsample of occurrences from null model 
 occurrences_values <- occurrences_values[sample(nrow(occurrences_values), stop), ]
+
+############################# Plot purposes: map with unbiased-biased points #####################
+# Index
+indices <- rownames(occurrences_values)
+indices <- as.numeric(indices)
+filtered_coord_occ <- coord_occ[indices, ]
+
+par(mfrow=c(1,1), mar=c(2,2,2,0.5)) 
+plot(prob_r, col = viridis(500, alpha = 1, begin = 0, end = 1, direction = 1))
+# title("Probability to be sampled", outer=TRUE, line=-1)
+points(filtered_coord_occ, cex = 0.6)
+points(points_biased, col = "red", cex = 0.6)
+# Aggiungi la legenda
+legend("topright", legend = c("Unbiased", "Biased"), col = c("black", "red"), pch = 19, cex = 0.8,
+       xpd = TRUE, y.intersp = 0.8)
+
+dev.off()
+
+coord_occ
+occurrences_values
+
+
+
+
 
 # List with the occurrences we want to test
 valori_n_occ <- c(seq(from = 20, to = stop, by = 20), stop)
@@ -410,7 +468,7 @@ loess_predictions <- lapply(unique(combined_df$n_occ), function(n) {
 # Mean df
 predizioni_media <- do.call(rbind, loess_predictions)
 
-# Plot
+############################ Plot: unbiased hypervolume ###############################
 ggplot() +
   geom_smooth(data = combined_df, aes(x = n_occ, y = iperv, group = sim), 
               method = "loess", se = FALSE, color = "grey", size = 0.5, alpha = 0.5) +
@@ -423,7 +481,6 @@ ggplot() +
 
 #################### Hypervolume of biased occurrences (road driven: biased sampling) ###############
 #####################################################################################################
-
 biased_df <- points_biased %>% as.data.frame()
 biased_df <- biased_df[,-c(5:8)]
 biased_df
@@ -499,7 +556,7 @@ predizioni_media_biased <- do.call(rbind, loess_predictions_biased)
 #  theme_minimal()
 
 
-# Plot
+########################## Plot: biased hypervolume ###############################
 ggplot() +
   geom_smooth(data = combined_df_biased, aes(x = n_occ, y = iperv, group = sim), 
               method = "loess", se = FALSE, color = "grey", size = 0.5, alpha = 0.5) +
@@ -553,7 +610,8 @@ find_intersection <- function(df1, df2) {
 # Calc. intersection points
 intersection_points <- find_intersection(predizioni_media, predizioni_media_biased)
 intersection_points
-# Combined plot
+
+############################### Combined plot: biased unbiased ###################################
 plot_combined <- ggplot() +
   geom_smooth(data = combined_df, aes(x = n_occ, y = iperv, group = sim), 
               method = "loess", se = FALSE, color = "grey", size = 0.5, alpha = 0.5) +
@@ -563,7 +621,7 @@ plot_combined <- ggplot() +
             color = "sienna1", size = 1.2) +
   geom_line(data = predizioni_media_biased, aes(x = n_occ, y = iperv_mean), 
             color = "darkgreen", size = 1.2) +
-  geom_point(data = intersection_points, aes(x = n_occ, y = iperv), color = "red", size = 2) +
+#  geom_point(data = intersection_points, aes(x = n_occ, y = iperv), color = "red", size = 2) +
   labs(title = "Hypervolume (Unbiased vs Biased)",
        x = "Occurrences",
        y = "Hypervolume") +
@@ -642,8 +700,10 @@ model_null <- train(trainDat_null[,names(mydata_aoa)],
 print(model_null)
 
 # Variable Importance of each predictor
-plot(varImp(model_null, scale = F), col="black")
+plot(varImp(model_null, scale = F), col="black", main = "Importance of each predictor", axes =FALSE)
 plotResponse(random.sp)
+dev.off()
+
 
 ## Predict and calculate error 
 # The trained model is then used to make predictions for the entire area of interest
@@ -652,8 +712,16 @@ prediction_null <- predict(mydata_aoa, model_null, na.rm=T)
 # Difference bewteen prediction and reference: true prediction error 
 truediff_null <- abs(prediction_null - random.sp$suitab.raster)
 
+
 # Plot Prediction, Reference and Difference
-plot(rast(list(prediction_null, random.sp$suitab.raster, truediff_null)), main = c("Prediction", "Reference", "Difference"), col = magma(500, alpha = 1, begin = 0, end = 1, direction = 1))
+par(mfrow = c(1, 2)) 
+plot(prediction_null, main = "Prediction with RF", col = inferno(500, alpha = 1, begin = 0, end = 1, direction = 1), legend = FALSE)
+plot(random.sp$suitab.raster, main = "Reference", col = inferno(500, alpha = 1, begin = 0, end = 1, direction = 1))
+
+dev.off()
+
+
+plot(truediff_null, main = "Difference", col = inferno(500, alpha = 1, begin = 0, end = 1, direction = 1))
 
 ## The AOA calculation takes the model as input to extract the importance of the predictors 
 # used as weights in multidimensional distance calculation.
@@ -678,7 +746,7 @@ plot(AOA_null$DI, col = viridis(100), main = "DI")
 plot(AOA_null$LPD, col = viridis(100), main = "LPD")
 
 # AOA: derived from the DI by using a threshold.
-plot(prediction_null, col=viridis(100), main = "Prediction for AOA")
+plot(prediction_null, col=inferno(100), main = "Prediction for Area of Applicability")
 plot(AOA_null$AOA, col = c("grey","transparent"), add = T, plg = list(x = "topleft", box.col = "black", bty = "o", title = "AOA"))
 
 dev.off()
@@ -725,11 +793,22 @@ prediction_biased <- predict(mydata_aoa, model_biased, na.rm=T)
 truediff_biased <- abs(prediction_biased - random.sp$suitab.raster)
 
 # Plot Prediction, Reference and Difference
-plot(rast(list(prediction_biased, random.sp$suitab.raster, truediff_biased)), main = c("Prediction", "Reference", "Difference"), col = magma(500, alpha = 1, begin = 0, end = 1, direction = 1))
+par(mfrow = c(1, 2)) 
+plot(prediction_biased, main = "Prediction with RF", col = inferno(500, alpha = 1, begin = 0, end = 1, direction = 1), legend = FALSE)
+plot(random.sp$suitab.raster, main = "Reference", col = inferno(500, alpha = 1, begin = 0, end = 1, direction = 1))
+
 dev.off()
 
-plot(rast(list(prediction_random, prediction_biased)), main = c("Random", "Biased"), col = magma(500, alpha = 1, begin = 0, end = 1, direction = 1))
 
+# Plot Prediction, Reference and Difference
+par(mfrow = c(1, 2)) 
+plot(prediction_biased, main = "Prediction with RF", col = inferno(500, alpha = 1, begin = 0, end = 1, direction = 1), legend = FALSE)
+plot(random.sp$suitab.raster, main = "Reference", col = inferno(500, alpha = 1, begin = 0, end = 1, direction = 1))
+plot(truediff_biased, main = "Difference", col = inferno(500, alpha = 1, begin = 0, end = 1, direction = 1))
+
+par(mfrow = c(1, 2)) 
+plot(prediction_null, main = "RF Null Model", col = inferno(500, alpha = 1, begin = 0, end = 1, direction = 1), legend = FALSE)
+plot(prediction_biased, main = "RF Biased data", col = inferno(500, alpha = 1, begin = 0, end = 1, direction = 1))
 ## The AOA calculation takes the model as input to extract the importance of the predictors 
 # used as weights in multidimensional distance calculation.
 AOA_biased <- aoa(mydata_aoa, model_biased, LPD = TRUE, verbose = FALSE)
@@ -755,7 +834,7 @@ plot(AOA_biased$LPD, col = viridis(100), main = "LPD")
 
 
 # AOA: derived from the DI by using a threshold.
-plot(prediction_biased, col=viridis(100), main = "Prediction for AOA (Biased)")
+plot(prediction_biased, col=inferno(100), main = "Prediction for AOA (Biased)")
 plot(AOA_biased$AOA, col = c("grey","transparent"), add = T, plg = list(x = "topleft", box.col = "black", bty = "o", title = "AOA"))
 
 
@@ -763,13 +842,13 @@ dev.off()
 ############################ Comparison ###############################################
 ## Set same scale
 par(mfrow=c(1,2))
-plot(prediction_null, col=viridis(100), main = "Prediction for AOA (null)")
+plot(prediction_null, col=viridis(100), main = "Prediction for AOA (Null)")
 plot(AOA_null$AOA, col = c("grey","transparent"), add = T, plg = list(x = "topright", box.col = "black", bty = "o", title = "AOA"))
 
 plot(prediction_biased, col=viridis(100), main = "Prediction for AOA (Biased)")
 plot(AOA_biased$AOA, col = c("grey","transparent"), add = T, plg = list(x = "topright", box.col = "black", bty = "o", title = "AOA"))
 
-
+#######################################################################################
 model_null$results
 model_biased$results
 
@@ -799,15 +878,15 @@ diff_biased_only <- ifel(is.na(masked_raster_null) & !is.na(masked_raster_biased
 diff_raster <- merge(diff_null_only, diff_biased_only)
 
 # Palette
-col_palette <- c("red", "blue")
+col_palette <- c("deeppink", "darkgreen")
 
 # Plot
 par(mfrow = c(1, 3), mar = c(5, 4, 4, 4) + 0.1)
-plot(masked_raster_null, main = "Null")
-plot(masked_raster_biased, main = "Biased")
-plot(diff_raster, col = col_palette, legend = FALSE, main = "Difference")
+plot(masked_raster_null, main = "Null", col=viridis(100), legend =FALSE)
+plot(masked_raster_biased, main = "Biased", col=viridis(100), legend = FALSE)
+plot(diff_raster, col = col_palette, main = "Difference", legend = FALSE)
 par(mar = c(5, 4, 4, 4) + 0.1, xpd = TRUE)
-legend("topleft", legend = c("Bias - Null (Red)", "Null - Bias (Blue)"), fill = col_palette, cex = 0.8, bty = "n")
+legend("topleft", legend = c("Bias - Null", "Null - Bias"), fill = col_palette, cex = 0.8, bty = "n")
 par(mfrow = c(1, 1))
 dev.off()
 
@@ -828,3 +907,7 @@ cat("N. red pixels:", num_red_pixels)
 cat("Area red pixels (km^2):", area_red_km2)
 cat("N. blu pixels", num_blue_pixels)
 cat("Area blu pixels (km^2):", area_blue_km2)
+
+
+################## Stabilire un epsilon: condizione di convergenza sulla base di cosa? #########################################################################
+################## hypervolume_overlap_statistics(): indici di Sorensen o Jaccard (Similarity) fra due ipervolumi consecutivi nell'iterazione ##################
