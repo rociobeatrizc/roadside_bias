@@ -168,6 +168,9 @@ raster_roads <- as(mydata_backup[[1]], "SpatRaster")
 r <- terra::rasterize(roads_vect, raster_roads)
 d <- distance(r, unit = "km") 
 
+
+############################################################################
+
 # Extract distances
 d_raster <- d %>% raster()
 distances <- d_raster %>%  as.data.frame()
@@ -218,8 +221,7 @@ find_intersection <- function(df1, df2) {
 ##############################################################################################
 ######################## Amazing Loop ########################################################
 # Define the function
-simulate_species <- function(nocc, nsim, n_species
-                             ) {
+simulate_species <- function(nocc, nsim, n_species) {
   
   final_results_list <- list()
   
@@ -279,23 +281,20 @@ simulate_species <- function(nocc, nsim, n_species
     # List with occurrences to test
     valori_n_occ <- c(seq(from = 40, to = stop, by = 10), stop)
     tutte_simulazioni <- list()
-
+    convergenza_info <- vector("logical", num_simulazioni)
     
     # Simulations loop
     for (sim in 1:num_simulazioni) {
       lista_output_occ <- list()
-#      interrotta_per_convergenza_locale <- FALSE
       
       for (i in seq_along(valori_n_occ)) {
         pluto <- pippo(occurrences_values, valori_n_occ[i])
         lista_output_occ[[i]] <- pluto[[1]]
-
       }
-
+      convergenza_info[sim] <- interrotta_per_convergenza_locale
       tutte_simulazioni[[sim]] <- lista_output_occ
     }
-    
-#    print(convergenza_info)
+
     
     combined_df <- do.call(rbind, lapply(seq_along(tutte_simulazioni), function(sim) {
       do.call(rbind, lapply(tutte_simulazioni[[sim]], function(df) {
@@ -320,18 +319,22 @@ simulate_species <- function(nocc, nsim, n_species
     stop_biased <- nrow(biased_df)
     valori_n_occ_biased <- c(seq(from = 30, to = stop_biased, by = 20), stop_biased)
     tutte_simulazioni_biased <- list()
+    convergenza_info_biased <- vector("logical", num_simulazioni)
     
     for (sim in 1:num_simulazioni) {
       lista_output_biased <- list()
+
       
       for (i in seq_along(valori_n_occ_biased)) {
         pluto <- pippo(biased_df, valori_n_occ_biased[i])
         lista_output_biased[[i]] <- pluto[[1]]
-
+        
       }
 
       tutte_simulazioni_biased[[sim]] <- lista_output_biased
     }
+    
+
     
     combined_df_biased <- do.call(rbind, lapply(seq_along(tutte_simulazioni_biased), function(sim) {
       do.call(rbind, lapply(tutte_simulazioni_biased[[sim]], function(df) {
@@ -363,7 +366,13 @@ simulate_species <- function(nocc, nsim, n_species
       species = species,
       type = c("unbiased", "biased"),
       n_occ = c(final_unbiased$n_occ, final_biased$n_occ),
-      iperv = c(final_unbiased$iperv_mean, final_biased$iperv_mean)
+      iperv = c(final_unbiased$iperv_mean, final_biased$iperv_mean),
+      points_biased = nrow(points_biased),
+      points_nb_20_percent = nrow(occurrences_values),
+      pixels_non_biased_raster = NA,  # placeholder
+      pixels_biased_raster = NA,  # placeholder
+      biased_null = NA,  # placeholder
+      null_biased = NA  # placeholder
     )
     
     # AOA estimation
@@ -381,10 +390,13 @@ simulate_species <- function(nocc, nsim, n_species
                           method = "rf",
                           importance = TRUE,
                           tuneGrid = expand.grid(mtry = c(2:length(names(mydata_aoa)))),
-                          trControl = trainControl(method ="cv", index = folds_biased$index))
+                          trControl = trainControl(method = "repeatedcv",
+                                                   repeats = 10,
+                                                   index = folds_biased$index,
+                                                   savePredictions = "all"),
+                          metric = "RMSE")
     
-    prediction_biased <- predict(mydata_aoa, model_biased, na.rm=T)
-    truediff_biased <- abs(prediction_biased - random.sp$suitab.raster)
+    AOA_null <- aoa(mydata_aoa, model_null, LPD = TRUE, verbose = FALSE)
     AOA_biased <- aoa(mydata_aoa, model_biased, LPD = TRUE, verbose = FALSE)
     masked_raster_null <- mask(prediction_null, AOA_null$AOA, maskvalues=0, updatevalue=NA)
     masked_raster_biased <- mask(prediction_biased, AOA_biased$AOA, maskvalues=0, updatevalue=NA)
@@ -403,16 +415,24 @@ simulate_species <- function(nocc, nsim, n_species
     final_results$biased_null <- num_red_pixels
     final_results$null_biased <- num_blue_pixels
     
+    cat("Specie", species, "\n")
+    cat("points biased", nrow(points_biased), "\n")
+    cat("points nb 20%", nrow(occurrences_values), "\n")
+    print(final_results)
+    cat("pixels in non-biased raster:", count_non_na_null, "\n")
+    cat("pixels in biased raster:", count_non_na_biased, "\n")
+    cat("biased-null", num_red_pixels, "\n")
+    cat("null-biased", num_blue_pixels, "\n")
+    
     final_results_list[[species]] <- final_results
   }
   
   # Combine all results and save to CSV
   combined_final_results <- do.call(rbind, final_results_list)
-  write.csv(combined_final_results, "final_results.csv", row.names = FALSE)
+  write.csv(combined_final_results, "final_results_300occ_10sim.csv", row.names = FALSE)
   
   return(combined_final_results)
 }
 
-
 # Example call to the function
-results_species <- simulate_species(nocc = 200, nsim = 10, n_species = 3)
+results <- simulate_species(nocc = 300, nsim = 10, n_species = 10)
