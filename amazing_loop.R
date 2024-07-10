@@ -221,6 +221,7 @@ find_intersection <- function(df1, df2) {
 ##############################################################################################
 ######################## Amazing Loop ########################################################
 # Define the function
+
 simulate_species <- function(nocc, nsim, n_species) {
   
   final_results_list <- list()
@@ -375,7 +376,52 @@ simulate_species <- function(nocc, nsim, n_species) {
       null_biased = NA  # placeholder
     )
     
+    
+    
+    
     # AOA estimation
+    # Unbiased
+    #################################  Null model ################################################
+    
+    
+    ## Model training
+    # A machine learning algorithm will be applied to learn the relationships between predictors and response
+    
+    ## Train data: must be converted in the format required by terra::extract
+    pa_points <- presence.points$sample.points[,-(3:4)] %>% as.data.frame() %>% st_as_sf(., coords = c("x","y"), crs = 4326)
+    mydata_aoa <- rast(mydata_backup)
+    
+    # Subset of the original 200 points
+    pa_points <- pa_points[rownames(occurrences_values), ]
+    
+    
+    # From raster, extract corresponding values 
+    trainDat_null <- terra::extract(mydata_aoa, pa_points, na.rm = FALSE)
+    
+    # From raster, extract suitability values, NA omit, assign spatial reference
+    trainDat_null$response <- terra::extract(random.sp$suitab.raster, pa_points, na.rm=FALSE, ID=FALSE)
+    trainDat_null <- data.frame(trainDat_null, pa_points)
+    trainDat_null <- na.omit(trainDat_null)
+    
+    ## Train model for Spatially Clustered Data
+    folds_null <- CreateSpacetimeFolds(trainDat_null, spacevar = "geometry", k = 4)
+    
+    
+    set.seed(15)
+    model_null <- train(trainDat_null[,names(mydata_aoa)],
+                        trainDat_null$response$`VSP suitability`,
+                        method = "rf",
+                        importance = TRUE,
+                        tuneGrid = expand.grid(mtry = c(2:length(names(mydata_aoa)))),
+                        trControl = trainControl(method ="cv", index = folds_null$index))
+    
+    
+    ## Predict and calculate error 
+    # The trained model is then used to make predictions for the entire area of interest
+    prediction_null <- predict(mydata_aoa, model_null, na.rm=T)
+    
+    
+    # Biased
     biased_sp_points <- points_biased %>% st_as_sf(., crs = 4326)
     biased_sp_points <- biased_sp_points[,-(1:8)]
     trainDat_biased <- terra::extract(mydata_aoa, biased_sp_points, na.rm=FALSE)
@@ -396,10 +442,16 @@ simulate_species <- function(nocc, nsim, n_species) {
                                                    savePredictions = "all"),
                           metric = "RMSE")
     
+    
+    
+    # The trained model is then used to make predictions for the entire area of interest
+    prediction_biased <- predict(mydata_aoa, model_biased, na.rm=T)
     AOA_null <- aoa(mydata_aoa, model_null, LPD = TRUE, verbose = FALSE)
     AOA_biased <- aoa(mydata_aoa, model_biased, LPD = TRUE, verbose = FALSE)
+    
     masked_raster_null <- mask(prediction_null, AOA_null$AOA, maskvalues=0, updatevalue=NA)
     masked_raster_biased <- mask(prediction_biased, AOA_biased$AOA, maskvalues=0, updatevalue=NA)
+    
     count_non_na_null <- sum(!is.na(masked_raster_null[]))
     count_non_na_biased <- sum(!is.na(masked_raster_biased[]))
     
@@ -435,4 +487,4 @@ simulate_species <- function(nocc, nsim, n_species) {
 }
 
 # Example call to the function
-results <- simulate_species(nocc = 300, nsim = 10, n_species = 10)
+results <- simulate_species(nocc = 300, nsim = 10, n_species = 3)
