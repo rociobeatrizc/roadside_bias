@@ -23,8 +23,10 @@ library(gdata)
 library(ggmap)
 library(osmdata)
 library(osmextract)
-
-remotes::install_github("ropensci/osmextract")
+library(dplyr)
+library(tidyr)
+library(stringr)
+# remotes::install_github("ropensci/osmextract")
 library(osmextract)
 
 setwd("/media/r_projects/phd_rocio/hypervolume")
@@ -36,7 +38,7 @@ aoi_abruzzo <- st_read("abruzzo.shp") %>% .$geometry
 centro_italia_bb <- st_bbox(aoi_abruzzo)
 
 # From OMSS select type of roads: primary, secondary, tertiary (paths)
-ht_primary <- "primary"
+ht_primary <- "secondary"
 
 # Download roads from OSM 
 osm_abruzzo <- oe_get("Abruzzo", stringsAsFactors = FALSE, quiet = TRUE)
@@ -96,8 +98,8 @@ for (i in 1:nlayers(mydata)){
 
 # Raster with presence/absence points (step 2): used to create the realized niche
 # It must be a RasterLayer object
-raster01 <- new.pres$pa.raster %>% raster()
-raster01
+# raster01 <- new.pres$pa.raster %>% raster()
+# raster01
 
 # The bioclimatic layers are extracted one by one from the stack
 r1 <- mydata$mean.annual.T
@@ -107,7 +109,9 @@ r4 <- mydata$amount.of.prec..wettest.month
 r5 <- mydata$amount.prec..driest.month
 
 # A stack is created containing the bioclimatic variables and the raster of presence/absence (realized niche)
-stack_pa <- brick(r1, r3, r4, r5, raster01)
+stack_pa <- brick(r1, r3, r4, r5 
+                  #, raster01
+                  )
 
 
 ######################## Functions for Hypervolume ####################
@@ -168,7 +172,6 @@ raster_roads <- as(mydata_backup[[1]], "SpatRaster")
 r <- terra::rasterize(roads_vect, raster_roads)
 d <- distance(r, unit = "km") 
 
-
 ############################################################################
 
 # Extract distances
@@ -222,7 +225,7 @@ find_intersection <- function(df1, df2) {
 ######################## Amazing Loop ########################################################
 # Define the function
 
-simulate_species <- function(nocc, nsim, n_species) {
+simulate_species <- function(nocc, nsim, n_species, sp_prevalence) {
   
   final_results_list <- list()
   
@@ -242,7 +245,7 @@ simulate_species <- function(nocc, nsim, n_species) {
     new.pres <- convertToPA(random.sp,
                             beta = "random",
                             alpha = -0.05, plot = FALSE,
-                            species.prevalence = 0.1)
+                            species.prevalence = sp_prevalence)
     
     # Occurrences
     presence.points <- sampleOccurrences(new.pres,
@@ -280,7 +283,7 @@ simulate_species <- function(nocc, nsim, n_species) {
     nrow(occurrences_values)
     
     # List with occurrences to test
-    valori_n_occ <- c(seq(from = 40, to = stop, by = 10), stop)
+    valori_n_occ <- c(seq(from = 50, to = stop, by = 30), stop)
     tutte_simulazioni <- list()
     convergenza_info <- vector("logical", num_simulazioni)
     
@@ -292,8 +295,8 @@ simulate_species <- function(nocc, nsim, n_species) {
         pluto <- pippo(occurrences_values, valori_n_occ[i])
         lista_output_occ[[i]] <- pluto[[1]]
       }
-      convergenza_info[sim] <- interrotta_per_convergenza_locale
-      tutte_simulazioni[[sim]] <- lista_output_occ
+#      convergenza_info[sim] <- interrotta_per_convergenza_locale
+       tutte_simulazioni[[sim]] <- lista_output_occ
     }
 
     
@@ -318,7 +321,7 @@ simulate_species <- function(nocc, nsim, n_species) {
     biased_df <- points_biased %>% as.data.frame()
     biased_df <- biased_df[,-c(5:8)]
     stop_biased <- nrow(biased_df)
-    valori_n_occ_biased <- c(seq(from = 30, to = stop_biased, by = 20), stop_biased)
+    valori_n_occ_biased <- c(seq(from = 40, to = stop_biased, by = 20), stop_biased)
     tutte_simulazioni_biased <- list()
     convergenza_info_biased <- vector("logical", num_simulazioni)
     
@@ -376,14 +379,9 @@ simulate_species <- function(nocc, nsim, n_species) {
       null_biased = NA  # placeholder
     )
     
-    
-    
-    
     # AOA estimation
     # Unbiased
     #################################  Null model ################################################
-    
-    
     ## Model training
     # A machine learning algorithm will be applied to learn the relationships between predictors and response
     
@@ -481,10 +479,102 @@ simulate_species <- function(nocc, nsim, n_species) {
   
   # Combine all results and save to CSV
   combined_final_results <- do.call(rbind, final_results_list)
-  write.csv(combined_final_results, "final_results_300occ_10sim.csv", row.names = FALSE)
+  write.csv(combined_final_results, "sp_prevalence0.15_850occ.csv", row.names = FALSE)
   
   return(combined_final_results)
 }
 
 # Example call to the function
-results <- simulate_species(nocc = 300, nsim = 10, n_species = 3)
+nocc850_sp0.15 <- simulate_species(nocc = 850, nsim = 10, n_species = 2, sp_prevalence = 0.15)
+
+### Merge CSVs (outputs)
+# setwd("C:/Users/rocio/Desktop/PHD/1 year/CSVs")
+
+# Directory for CSVs
+csv_files <- list.files(pattern = "sp_prevalence.*\\.csv")
+
+# Funzione per estrarre species_prevalence e initial_occurrences dal nome del file
+extract_info_from_filename <- function(filename) {
+  species_prevalence <- as.numeric(str_extract(filename, "(?<=sp_prevalence)\\d+\\.\\d+"))
+  initial_occurrences <- as.numeric(str_extract(filename, "(?<=_)\\d+(?=occ)"))
+  return(c(species_prevalence, initial_occurrences))
+}
+
+## Sistema le colonne
+
+
+
+# Modifichiamo il processo dei CSV per eliminare le colonne ridondanti
+process_csv <- function(filename) {
+  # Leggi il CSV
+  data <- read.csv(filename)
+  
+  # Estrai species_prevalence e initial_occurrences dal nome del file
+  info <- extract_info_from_filename(filename)
+  species_prevalence <- info[1]
+  initial_occurrences <- info[2]
+  
+  # Aggiungi le colonne species_prevalence e initial_occurrences
+  data <- data %>%
+    mutate(species_prevalence = species_prevalence,
+           initial_occurrences = initial_occurrences)
+  
+  # Pivot dei dati: crea colonne separate per 'biased' e 'unbiased'
+  data_wide <- data %>%
+    pivot_wider(
+      names_from = type, 
+      values_from = c(n_occ, iperv, points_biased, points_nb_20_percent, pixels_non_biased_raster, pixels_biased_raster),
+      names_glue = "{.value}_{type}"
+    )
+  
+  # Rimozione colonne ridondanti e rinomina
+  data_wide <- data_wide %>%
+    mutate(
+      points_biased = points_biased_unbiased,  # Scegli una colonna, poiché sono uguali
+      points_nb_20_percent = points_nb_20_percent_unbiased,  # Scegli una colonna
+      pixels_non_biased_raster = pixels_non_biased_raster_unbiased,  # Scegli una colonna
+      pixels_biased_raster = pixels_biased_raster_unbiased  # Scegli una colonna
+    ) %>%
+    select(-points_biased_biased, -points_biased_unbiased,
+           -points_nb_20_percent_biased, -points_nb_20_percent_unbiased,
+           -pixels_non_biased_raster_biased, -pixels_non_biased_raster_unbiased,
+           -pixels_biased_raster_biased, -pixels_biased_raster_unbiased) %>%
+    mutate(species = row_number())  # Numerazione incrementale delle specie
+  
+  return(data_wide)
+}
+
+# Applica la funzione a tutti i file CSV e unisci i risultati
+all_data <- lapply(csv_files, process_csv) %>%
+  bind_rows()
+all_data
+View(all_data)
+glimpse(all_data)
+# Salva il file unito
+write.csv(all_data, "merged_output.csv", row.names = FALSE)
+
+
+# Modifica l'ordine e la numerazione della colonna 'species'
+all_data <- all_data %>%
+  mutate(species = row_number()) %>%  # Numerazione progressiva
+  select(
+    species,                         # 1. Numerazione progressiva delle specie
+    species_prevalence,              # 2. Species Prevalence
+    initial_occurrences,             # 3. Initial Occurrences
+    points_biased,                   # 4. Points Biased
+    points_nb_20_percent,            # 5. Unbiased + 20% (points_nb_20_percent)
+    iperv_unbiased,                  # 6. Iperv Unbiased
+    n_occ_unbiased,                  # 7. Numero occorrenze Unbiased (n_occ_unbiased)
+    iperv_biased,                    # 8. Iperv Biased
+    n_occ_biased,                    # 9. Numero occorrenze Biased (n_occ_biased)
+    pixels_non_biased_raster,         # 10. Pixels Non-biased raster
+    pixels_biased_raster,            # 11. Pixels Biased raster
+    biased_null,                     # 12. Biased Null
+    null_biased                      # 13. Null Biased
+  )
+
+# Visualizza il risultato
+View(all_data)
+
+# Salva il file con le modifiche
+write.csv(all_data, "merged_output_ordered.csv", row.names = FALSE)
