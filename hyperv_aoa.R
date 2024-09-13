@@ -1,9 +1,8 @@
+# Packages
 library(CAST)
 library(caret)
 library(sf)
 library(ClimDatDownloadR)
-# Alternatively, a   direct link with GitHub can be created
-if(!require(devtools)) install.packages("devtools")
 library(devtools)
 # devtools::install_github("HelgeJentsch/ClimDatDownloadR")
 library(raster)
@@ -24,17 +23,19 @@ library(osmextract)
 remotes::install_github("ropensci/osmextract")
 library(osmextract)
 
+# Set working directory
 setwd("/media/r_projects/phd_rocio/hypervolume")
 
 # Upload shapefile
 aoi_abruzzo <- st_read("abruzzo.shp") %>% .$geometry 
 
 # %>% st_union() if there are more regions to merge
+
+# Plot region
 plot(aoi_abruzzo)
-dev.off()
 
 # Bounding Box 
-centro_italia_bb <- st_bbox(aoi_abruzzo)
+abruzzo_bb <- st_bbox(aoi_abruzzo)
 
 # From OMSS select type of roads: primary, secondary, tertiary (paths)
 ht_primary <- "primary"
@@ -42,26 +43,32 @@ ht_primary <- "primary"
 # Download roads from OSM 
 osm_abruzzo <- oe_get("Abruzzo", stringsAsFactors = FALSE, quiet = TRUE)
 osm_abruzzo_roads <- osm_abruzzo[osm_abruzzo$highway %in% ht_primary, ]
-dev.off()
 plot(osm_abruzzo_roads$geometry)
 
-########## Download bioclimatic variables from CHELSA #############################
+## Download bioclimatic variables from CHELSA
 Chelsa.Clim.download(
   # Starting from the workind directory, specify the path
-  #  save.location = "strade_parma",
+  #  save.location = "my/path",
+  
   # 'bio' contains all the bioclimatic variables
   parameter = "bio",
+  
   # Some variables are chosen from the 19 available
   bio.var = c(1, 7, 13, 14),
+  
   # Version
   version.var = "2.1",
+  
   # Cropping along the area of interest
   clipping = TRUE,
   clip.shapefile = aoi_abruzzo,
+  
   # Insert the coordinates of the area of interest (bounding box)
-  clip.extent = centro_italia_bb,
+  clip.extent = abruzzo_bb,
+  
   # Buffer, if needed
   # buffer = 3,
+  
   # Other commands
   convert.files.to.asc = FALSE,
   stacking.data = TRUE,
@@ -71,7 +78,7 @@ Chelsa.Clim.download(
 )
 
 
-#################  Upload Bioclimatic ################
+##  Upload bioclimatic variables
 # String containing the names of raster files
 rastlist <- list.files(path ="/media/r_projects/phd_rocio/hypervolume", pattern = "CHELSA", full.names = TRUE)
 
@@ -91,44 +98,38 @@ plot(mydata[[1]], col = magma(500, alpha = 1, begin = 0, end = 1, direction = 1)
 aoi_sp <- sf::as_Spatial(aoi_abruzzo)
 mydata <- mydata %>% crop(., aoi_sp) %>% mask(., aoi_sp)
 
-
-################## Plot Purposes: roads on raster ######################
-################## Better in QGIS ######################################
+## Plot: roads on raster
 raster_df <- as.data.frame(rasterToPoints(mydata_backup[[1]]), xy = TRUE)
 value_column <- names(raster_df)[3]
+
 ggplot() +
-  # Aggiungi il raster
+  # Add raster
   geom_raster(data = raster_df, aes_string(x = "x", y = "y", fill = value_column)) +
-  scale_fill_viridis_c() +  # Scala di colori per il raster
-  # Aggiungi le linee delle strade
+  scale_fill_viridis_c() + 
+  # Roads
   geom_sf(data = osm_abruzzo_roads$geometry, color = "black", size = 0.5) +
-  # Temi e titoli opzionali
   theme_minimal() +
   labs(title = "Roads",
        fill = "Values") +
   coord_sf()
 
-
-########### For plot purposes ################
+## Plot: bioclimatic variables
 # Labels 
 titles <- c("Mean Annual Temperature", "Annual Precipitation", 
             "Amount of Precipitation in Wettest Month", "Amount of Precipitation in Driest Month")
-
 # Plot all together
 par(mfrow=c(2,2), mar=c(2,2,2,0.5))
 for (i in 1:nlayers(mydata_backup)) {
   plot(mydata_backup[[i]], main=titles[i], col=magma(500, alpha = 1, begin = 0, end = 1, direction = 1), legend.width=1.5, legend.shrink=0.75, axes=FALSE, box=FALSE)
 }
-
 dev.off()
 
-# Original data: will be useful later
+## Original data: will be useful later
 mydata_backup <- mydata
-##############################################
 
+## Random Virtual Species: run every time you want to create a virtual species, from the beginning.
 
-########### Random Virtual Species: run every time you want to create a virtual species, from the beginning.
-# Suitability map generation
+## Suitability map generation
 random.sp <- generateRandomSp(raster.stack = mydata,
                               convert.to.PA = FALSE,
                               # How to combine response functions
@@ -142,28 +143,27 @@ random.sp <- generateRandomSp(raster.stack = mydata,
                               plot = FALSE)
 
 
+# Suitability plot
 plot(random.sp$suitab.raster, col = plasma(500, alpha = 1, begin = 0, end = 1, direction = 1))
 title("Suitability Map", outer=TRUE, line=-1)
 dev.off()
-random.sp$suitab.raster
 
 # Response functions
 # plotResponse(random.sp)
 
-# Presence/Absence: requires defining the parameters alpha, beta, and species prevalence
+## Presence/Absence: requires defining the parameters alpha, beta, and species prevalence
 new.pres <-convertToPA(random.sp,
                        beta = "random",
                        alpha = -0.05, plot = FALSE,
                        species.prevalence = 0.1)
 
 
-
-# Plot purposes 
+# Presence/Absence plot
 plot(random.sp$suitab.raster)
 plot(new.pres$pa.raster, col = c("yellowgreen", "deeppink"), box = FALSE, axes = FALSE)
 title("Presence-Absence Map", outer=TRUE, line=-1)
 
-# Occurences
+## Occurences
 presence.points <- sampleOccurrences(new.pres,
                                      n = 200,
                                      type = "presence only",
@@ -182,9 +182,9 @@ title("Occurrences", outer=TRUE, line=-1)
 dev.off()
 
 
+## Preliminary Steps for Niche Analysis
 
-######## Preliminary Steps for Niche Analysis #####################
-#### Z transform for hypervolume building
+# Z transform for hypervolume building
 for (i in 1:nlayers(mydata)){
   mydata[[i]] <- (mydata[[i]] - cellStats(mydata[[i]], 'mean')) / cellStats(mydata[[i]], 'sd') 
 }
@@ -194,6 +194,7 @@ for (i in 1:nlayers(mydata)){
 raster01 <- new.pres$pa.raster %>% raster()
 raster01
 
+######### RIVEDERE!!! ############
 # The bioclimatic layers are extracted one by one from the stack
 r1 <- mydata$mean.annual.T
 # r2 <- mydata$annual.range.air.T
