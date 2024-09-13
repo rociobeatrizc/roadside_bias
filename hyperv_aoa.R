@@ -37,7 +37,7 @@ plot(aoi_abruzzo)
 # Bounding Box 
 abruzzo_bb <- st_bbox(aoi_abruzzo)
 
-# From OMSS select type of roads: primary, secondary, tertiary (paths)
+# From OSM select type of roads: primary, secondary, tertiary (paths)
 ht_primary <- "primary"
 
 # Download roads from OSM 
@@ -172,9 +172,8 @@ presence.points <- sampleOccurrences(new.pres,
                                      detection.probability = 1,
                                      correct.by.suitability = TRUE,
                                      plot = FALSE)
-dev.off()
 
-# Plot
+# Plot: occurrences
 par(mfrow=c(1,1), mar=c(2,2,2,0.5)) 
 plot(random.sp$suitab.raster, col = plasma(500, alpha = 1, begin = 0, end = 1, direction = 1), axes = FALSE, box = FALSE)
 points(presence.points$sample.points, col = "black", pch = 19, cex=0.3)
@@ -209,6 +208,7 @@ stack_pa <- brick(r1, r3, r4, r5, raster01)
 raster_occurences <- presence.points$sample.points %>% as.data.frame() %>% .[.$Real == 1 & .$Observed == 1, ]
 raster_occurences
 
+##### RIVEDERE!!!: con funzione extract
 # The environmental variables are associated with the occurrences using their coordinates
 stack_occ <- brick(r1, r3, r4, r5)
 values_occ <- stack_occ %>% rasterToPoints() %>% as.data.frame()
@@ -219,84 +219,79 @@ filtered_occ <- merge(values_occ, raster_occurences, by = c("x", "y"))
 occurrences_values <- filtered_occ[,-c(1:2, 7:8)]
 
 
-######################## Functions for Hypervolume ####################
-# Hypervolume
-calcola_ipervolume <- function(data) {
+## Functions for Hypervolume
+
+# Hypervolume: just the hypervolume value from hypervolume_gaussian function
+hyp_calc <- function(data) {
   hv_occ <- hypervolume_gaussian(data)
   return(hv_occ@Volume)
 }
 
-# Random increment
-pippo <- function(x, no, epsilon = 0.01) {
+# Function to build the accumulation curve with random increment in occurrences
+acc_curve <- function(x, no) {
   # Starts with a random row
   fx <- x %>% 
     sample_n(size = 1) 
   
   ipervolumi <- 0
   num_occurrences <- 0
-  interrotta_per_convergenza <- FALSE
   
   for (i in 1:1000) {
     
-    # Al valore di inizio (una riga)
-    # Scelgo a caso no valori
-    # Li lego ad fx
-    # Mantengo valori univoci
+   # To the initial value (a row)
+   # Random values are selected
+   # They are bound to fx
+   # Unique values are kept
     fx <- x %>% 
       sample_n(size = no) %>% 
       bind_rows(fx) %>% 
       distinct()
     
-    # Ipervolume per subset
-    hv <- calcola_ipervolume(fx)
+    # Hypervolume per subset
+    hv <- hyp_calc(fx)
     
-    # Salva l'ipervolume e il numero di occorrenze
+    # Save hypervolume & number of occurrences
     ipervolumi <- c(ipervolumi, hv)
     num_occurrences <- c(num_occurrences, nrow(fx))
-    
-    # Condizione di convergenza
-    if (i > 1 && abs(ipervolumi[i] - ipervolumi[i - 1]) < epsilon) {
-      interrotta_per_convergenza <- TRUE
-      break
-    }
-    
-    # Condizione
-    # Interrompi quando il subset ha lo stesso numero di occorrenze del set originale
+
+   # Condition
+   # Stop when the subset has the same number of occurrences as the original set
     if(nrow(fx) == nrow(x)) {
       break
     }
   }
   
   result <- bind_cols(iperv = ipervolumi, n_occ = num_occurrences)
-  return(list(result, interrotta_per_convergenza = interrotta_per_convergenza))
+  return(list(result))
 }
 
 
-############################# Roadside Bias ################################
-############################################################################
+
+## Roadside bias
 # Create raster with distances from roads
 roads_vect <- terra::vect(osm_abruzzo_roads$geometry)
 
+# Turn into SpatRaster object
 raster_roads <- as(mydata_backup[[1]], "SpatRaster")
 
 r <- terra::rasterize(roads_vect, raster_roads)
 d <- distance(r, unit = "km") 
 
 
-####################### Plot purposes: distance from roads #################
+## Plot: distance from roads
 d_rast <- d %>% raster() %>% crop(., aoi_sp) %>% mask(., aoi_sp)
 raster_df_dist <- as.data.frame(rasterToPoints(d_rast), xy = TRUE)
 value_column <- names(raster_df_dist)[3]
+
 ggplot() +
-  # Aggiungi il raster
+  # Add raster
   geom_raster(data = raster_df_dist, aes_string(x = "x", y = "y", fill = value_column)) +
   scale_fill_viridis_c(alpha = 1,
                        begin = 0,
                        end = 1) +  # Scala di colori per il raster
-  # Aggiungi le linee delle strade
+  # Add roads
   geom_sf(data = osm_abruzzo_roads$geometry, color = "black", size = 0.5) +
   theme_bw() +
-  # Temi e titoli opzionali
   theme_minimal() +
   labs(title = "Distance from Roads",
        fill = "Distance (km)") +
@@ -306,14 +301,13 @@ ggplot() +
     axis.title.y = element_blank()
   )
 
-############################################################################
 
-# Extract distances
+## Extract distances
 d_raster <- d %>% raster()
 distances <- d_raster %>%  as.data.frame()
 distances
 
-# Sampling probability
+## Sampling probability: simulation of the lazy sampler
 c <- 1
 sampling_prob <- 1-(((log(c*distances))/(log(max(c*distances)))))
 sampling_prob <- as.data.frame(sampling_prob)
@@ -326,21 +320,20 @@ sampling_prob[sampling_prob > 1] <- 1
 # New raster with probability to be sampled instead of distances
 prob_raster <- classify(d, cbind(values(d), sampling_prob))
 
-
-############ Plot purposes: sampling probability ##########################
+## Plot purposes: sampling probability
 prob_r <- prob_raster %>% raster() %>% crop(., aoi_sp) %>% mask(., aoi_sp)
 raster_df_prob <- as.data.frame(rasterToPoints(prob_r), xy = TRUE)
 value_column <- names(raster_df_prob)[3]
+
 ggplot() +
-  # Aggiungi il raster
+  # Add raster
   geom_raster(data = raster_df_prob, aes_string(x = "x", y = "y", fill = value_column)) +
   scale_fill_viridis_c(alpha = 1,
                        begin = 0,
                        end = 1) +  # Scala di colori per il raster
-  # Aggiungi le linee delle strade
+  # Add roads
   geom_sf(data = osm_abruzzo_roads$geometry, color = "black", size = 0.5) +
   theme_bw() +
-  # Temi e titoli opzionali
   theme_minimal() +
   labs(title = "Sampling Probability",
        fill = "Probability") +
@@ -351,21 +344,17 @@ ggplot() +
   )
 
 
-
-# Occurrences as points
+## Occurrences as points
 coord_occ <- terra::vect(filtered_occ, geom = c("x","y"), crs="epsg:4326")
-coord_occ
-points(coord_occ)
 
 # Probability of each point to be sampled
 probabilities_occ <- terra::extract(prob_raster, coord_occ, ID = TRUE)
-probabilities_occ
 
 # Add the probability value to the points
 occ_with_prob <- cbind(coord_occ, probabilities_occ)
 print(occ_with_prob)
 
-#sample_frac # Points with 100% of probability to be sampled (the one in the roads and within 1 km)
+# Points with 100% of probability to be sampled (those on the roads and/or within 1 km)
 points_biased <- occ_with_prob[occ_with_prob$layer == 1, ]
 
 #################### Hypervolume of occurrences (random sampled: null model) ###############
