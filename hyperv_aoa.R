@@ -274,9 +274,9 @@ roads_vect <- terra::vect(osm_abruzzo_roads$geometry)
 # Turn into SpatRaster object
 raster_roads <- as(mydata_backup[[1]], "SpatRaster")
 
+# Rasterize distances
 r <- terra::rasterize(roads_vect, raster_roads)
 d <- distance(r, unit = "km") 
-
 
 ## Plot: distance from roads
 d_rast <- d %>% raster() %>% crop(., aoi_sp) %>% mask(., aoi_sp)
@@ -286,9 +286,7 @@ value_column <- names(raster_df_dist)[3]
 ggplot() +
   # Add raster
   geom_raster(data = raster_df_dist, aes_string(x = "x", y = "y", fill = value_column)) +
-  scale_fill_viridis_c(alpha = 1,
-                       begin = 0,
-                       end = 1) +  # Scala di colori per il raster
+  scale_fill_viridis_c(alpha = 1, begin = 0, end = 1) +  
   # Add roads
   geom_sf(data = osm_abruzzo_roads$geometry, color = "black", size = 0.5) +
   theme_bw() +
@@ -297,21 +295,19 @@ ggplot() +
        fill = "Distance (km)") +
   coord_sf() +
   theme(
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank()
-  )
+     axis.title.x = element_blank(),
+     axis.title.y = element_blank()
+   )
 
 
 ## Extract distances
 d_raster <- d %>% raster()
 distances <- d_raster %>%  as.data.frame()
-distances
 
 ## Sampling probability: simulation of the lazy sampler
 c <- 1
 sampling_prob <- 1-(((log(c*distances))/(log(max(c*distances)))))
 sampling_prob <- as.data.frame(sampling_prob)
-sampling_prob
 
 # Some values are: Inf. Replace those values with 1
 sampling_prob[sampling_prob == Inf] <- 1
@@ -320,7 +316,7 @@ sampling_prob[sampling_prob > 1] <- 1
 # New raster with probability to be sampled instead of distances
 prob_raster <- classify(d, cbind(values(d), sampling_prob))
 
-## Plot purposes: sampling probability
+## Plot: sampling probability
 prob_r <- prob_raster %>% raster() %>% crop(., aoi_sp) %>% mask(., aoi_sp)
 raster_df_prob <- as.data.frame(rasterToPoints(prob_r), xy = TRUE)
 value_column <- names(raster_df_prob)[3]
@@ -328,9 +324,7 @@ value_column <- names(raster_df_prob)[3]
 ggplot() +
   # Add raster
   geom_raster(data = raster_df_prob, aes_string(x = "x", y = "y", fill = value_column)) +
-  scale_fill_viridis_c(alpha = 1,
-                       begin = 0,
-                       end = 1) +  # Scala di colori per il raster
+  scale_fill_viridis_c(alpha = 1, begin = 0, end = 1) +  
   # Add roads
   geom_sf(data = osm_abruzzo_roads$geometry, color = "black", size = 0.5) +
   theme_bw() +
@@ -339,9 +333,9 @@ ggplot() +
        fill = "Probability") +
   coord_sf() +
   theme(
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank()
-  )
+     axis.title.x = element_blank(),
+     axis.title.y = element_blank()
+   )
 
 
 ## Occurrences as points
@@ -352,16 +346,14 @@ probabilities_occ <- terra::extract(prob_raster, coord_occ, ID = TRUE)
 
 # Add the probability value to the points
 occ_with_prob <- cbind(coord_occ, probabilities_occ)
-print(occ_with_prob)
 
 # Points with 100% of probability to be sampled (those on the roads and/or within 1 km)
 points_biased <- occ_with_prob[occ_with_prob$layer == 1, ]
 
-#################### Hypervolume of occurrences (random sampled: null model) ###############
-############################################################################################
 
+## Hypervolume of occurrences (random sampled: null model) 
 # Num. simulations each species
-num_simulazioni <- 10
+num_sim <- 10
 
 # Set stop point according to the number of biased occurrences: same sampling effort
 nrow(points_biased)
@@ -404,7 +396,7 @@ tutte_simulazioni <- list()
 convergenza_info <- vector("logical", num_simulazioni)
 
 # For cycle for simulations
-for (sim in 1:num_simulazioni) {
+for (sim in 1:num_sim) {
   
   lista_output_occ <- list()
   interrotta_per_convergenza_locale <- FALSE
