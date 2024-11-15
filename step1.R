@@ -1,6 +1,6 @@
 # first step: random species generation
 # each species has a number of occurrences
-# the output is a csv of points in which we can find; coordinates of the points, distance from the roads, probability to be sampled,
+# the output is a csv of points in which we can find: coordinates of the points, distance from the roads, probability to be sampled,
 # bioclimatic variables, type of point according to the lazy sampler simulation (unbiased/biased)
 # parameters to be setted before: number of starting occurrences, species prevalence, sample prevalence
 # those infos will be inside the name of the csv
@@ -60,7 +60,6 @@ mydata_backup <- mydata
 
 # distances
 roads_vect <- terra::vect(osm_abruzzo_roads$geometry)
-
 raster_roads <- as(mydata_backup[[1]], "SpatRaster")
 
 r <- terra::rasterize(roads_vect, raster_roads)
