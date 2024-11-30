@@ -3,14 +3,10 @@
 
 library(sf)
 library(raster)
-library(virtualspecies)
 library(ggplot2)
 library(dplyr)
 library(tidyverse)
-library(terra) 
-library(geodata)
-library(osmdata)
-library(osmextract)
+library(terra)
 library(hypervolume)
 
 setwd("C:/Users/rocio/Desktop/PHD/1 year/Abruzzo")
@@ -21,7 +17,6 @@ setwd("C:/Users/rocio/Desktop/PHD/1 year/Abruzzo")
 sp2_sp_prev0.3_sample_prev0.9_nocc100 <- read.csv("species_2_sp_prevalence_0.3_sample_prev_0.9_n_occ_100.csv",
                                                   row.names = NULL)
 
-typeof(sp2_sp_prev0.3_sample_prev0.9_nocc100)
 # csv check 
 head(sp2_sp_prev0.3_sample_prev0.9_nocc100)
 nrow(sp2_sp_prev0.3_sample_prev0.9_nocc100)
@@ -100,7 +95,7 @@ head(unbiased_20)
 head(sp2_sp_prev0.3_sample_prev0.9_nocc100)
 
 # drop useless variables
-drops <- c("X", "Y", "distance", "ID", "probability", "UNBIASED", "BIASED")
+drops <- c("X", "Y", "distance", "ID", "ID.1" ,"probability", "UNBIASED", "BIASED", "ID.1", "suitability")
 
 # subset with environmental data
 biased_env <- biased[ , !(names(biased) %in% drops)]
@@ -112,6 +107,25 @@ nrow(biased_env)
 nrow(unbiased_20_env)
 nrow(sp2_env)
 
+# hypervolume needs the environmental variables z-transformed
+z_transform <- function(df) {
+  df[] <- lapply(df, function(col) {
+    if (is.numeric(col)) {
+      (col - mean(col, na.rm = TRUE)) / sd(col, na.rm = TRUE)
+    } else {
+      col
+    }
+  })
+  return(df)
+}
+
+# z_trasnform
+biased_env <- z_transform(biased_env)
+unbiased_20_env <- z_transform(unbiased_20_env)
+sp2_env <- z_transform(sp2_env)
+
+# Visualizza i risultati
+print(biased_env)
 
 # let's build the curve that describes the hypervolume as the occurrences accumulate and increase
 # the following function sets the starting number of points and the steps for the hypervolume building
@@ -249,7 +263,7 @@ plot_hyp <- ggplot(combined_data, aes(x = n_occ, y = iperv_mean, color = type)) 
   geom_line(size = 1) +
   labs(
     title = "comparison",
-    x = "n_occ",
+    x = "n_occ", 
     y = "iperv_mean",
     color = "type"
   ) +
