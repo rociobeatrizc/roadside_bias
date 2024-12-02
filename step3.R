@@ -10,6 +10,7 @@ library(viridis)
 library(ggplot2)
 library(tidyverse)
 library(terra)
+library(geodata)
 
 setwd("C:/Users/rocio/Desktop/PHD/1 year/Abruzzo")
 
@@ -88,14 +89,14 @@ sp2_env <- sp2_sp_prev0.3_sample_prev0.9_nocc100[ , !(names(sp2_sp_prev0.3_sampl
 
 # train data: null, biased, all
 unbiased_20_env <- unbiased_20_env %>% st_as_sf(., coords = c("X", "Y"), crs = 4326) %>%  as.data.frame()
-biased_env <- biased_end %>% st_as_sf(., coords = c("X", "Y"), crs = 4326) %>% as.data.frame()
+biased_env <- biased_env %>% st_as_sf(., coords = c("X", "Y"), crs = 4326) %>% as.data.frame()
 sp2_env <- sp2_env %>% st_as_sf(., coords = c("X", "Y"), crs = 4326) %>% as.data.frame()
 
 # rasterize environmental data
 mydata <- rast(mydata)
 
 # name of the variables to take into account
-vars <- names(unbiased_20_env_df[, !names(unbiased_20_env_df) %in% c("suitability", "geometry")])
+vars <- names(unbiased_20_env[, !names(unbiased_20_env) %in% c("suitability", "geometry")])
 
 # area of applicability: null, biased, all
 aoa_null <- aoa(mydata, train = unbiased_20_env, variables = vars)
