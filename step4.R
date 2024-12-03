@@ -48,6 +48,39 @@ exclusive_null
 exclusive_biased
 count_all
 
+# function for pixel stat
+pixel_stat <- function(raster_stack, id) {
+  # Estrai i raster necessari dallo stack
+  aoa_null <- raster_stack$AOA_null
+  aoa_biased <- raster_stack$AOA_biased
+  aoa_all <- raster_stack$AOA_all
+  
+  # Calcola i valori
+  common_pixels <- sum(aoa_null[] == 1 & aoa_biased[] == 1, na.rm = TRUE)
+  exclusive_null <- sum(aoa_null[] == 1 & aoa_biased[] == 0, na.rm = TRUE)
+  exclusive_biased <- sum(aoa_null[] == 0 & aoa_biased[] == 1, na.rm = TRUE)
+  count_all <- sum(aoa_all[] == 1, na.rm = TRUE)
+  
+  # Crea una tabella (data.frame) con i risultati
+  result <- data.frame(
+    ID = id,
+    Common_Pixels = common_pixels,
+    Exclusive_Null = exclusive_null,
+    Exclusive_Biased = exclusive_biased,
+    Count_All = count_all
+  )
+  
+  return(result)
+}
+
+
+# stats
+results <- pixel_stat(sp2_sp_prev0.3_sample_prev0.9_nocc350_aoa, id = "sp2_0.3_0.9_350")
+print(results)
+
+#            ID           Common_Pixels      Exclusive_Null  Exclusive_Biased  Count_All
+#          sp2_0.3_0.9_350      5162            201              119            5790
+
 # DI
 di_null   <- sp2_sp_prev0.3_sample_prev0.9_nocc350_aoa$DI_null
 di_biased <- sp2_sp_prev0.3_sample_prev0.9_nocc350_aoa$DI_biased
