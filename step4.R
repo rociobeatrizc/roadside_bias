@@ -51,7 +51,7 @@ exclusive_biased
 count_all
 
 # function for pixel stat
-pixel_stat <- function(raster_stack, id) {
+analyze_AOA <- function(raster_stack, id) {
   # Estrai i raster necessari dallo stack
   aoa_null <- raster_stack$AOA_null
   aoa_biased <- raster_stack$AOA_biased
@@ -77,7 +77,7 @@ pixel_stat <- function(raster_stack, id) {
 
 
 # stats
-results <- pixel_stat(sp2_sp_prev0.3_sample_prev0.9_nocc350_aoa, id = "sp2_0.3_0.9_350")
+results <- analyze_AOA(sp2_sp_prev0.3_sample_prev0.9_nocc350_aoa, id = "sp2_0.3_0.9_350")
 print(results)
 
 
