@@ -1,4 +1,5 @@
 # report of the data in area of applicability and DI
+# just one csv
 
 library(CAST)
 library(caret)
@@ -184,7 +185,7 @@ data.wgs <- SpatialPointsDataFrame(
 )
 
 mod0 = mgcv::gam(DI_null ~ 1 + s(Longitude, Latitude, bs = "sos"), method = "REML", data = data.wgs)
-summary(mod0)
+summary(mod0)xx
 
 
 # https://jakubnowosad.com/posts/2024-10-13-spatcomp-bp1/
@@ -202,5 +203,3 @@ ggplot() +
  geom_smooth(aes(x = c(0:7), y = c(0:7)), color = "red", method = "lm") + 
  theme_minimal() +
  labs(x = "DI biased", y = "DI null")
-
-# what should I save from this script? 
